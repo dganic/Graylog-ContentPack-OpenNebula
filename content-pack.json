@@ -1,0 +1,2634 @@
+{
+  "v": 1,
+  "id": "196dd486-1eef-4e49-9d8d-6e98cd515979",
+  "rev": 1,
+  "name": "Graylog-ContentPack-OpenNebula",
+  "summary": "Graylog Content Pack for OpenNebula Frontend Logging",
+  "description": "This Content Pack enables you to parse the logs which are generated  by OpenNebula Frontend  and system logs provided systemd-journal. The logs are parsed to enable dashboards, streams and structured search queries.",
+  "vendor": "Aleksandr Anishchenko dganic@yandex.ru",
+  "url": "https://github.com/dganic/Graylog-ContentPack-OpenNebula",
+  "parameters": [],
+  "entities": [
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "02d7b357-4c31-4c17-a592-23ac294bcaac",
+      "data": {
+        "name": "ONE_LOG",
+        "pattern": "\\[Z%{DATA:zone_id}\\]\\[%{DATA:module}\\]\\[%{ONE_LOGLEVEL:log_level}\\]"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "0e80462c-89a3-40f4-b413-a0469343ddaa",
+      "data": {
+        "name": "LOGNAME_FROM_PATH",
+        "pattern": "%{WORD:application_name}\\.(log|error)$"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "929305e3-a5bb-4cd8-a18d-a00a7319730d",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "parse systemd-journal logs from sidecars messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"parse systemd-journal logs from sidecars messages\"\n\nwhen\n    has_field(\"message\") && has_field(\"SourceModuleName\") && \n    to_string($message.SourceModuleName) == \"systemd-journal\"\n    \nthen\n    //Debug\n   // set_field(field: \"message_original\", value: $message.message);\n    \n    let parsed_json_tree = parse_json(value: to_string($message.message));\n    let parsed_fields = select_jsonpath(\n                            json: parsed_json_tree, \n                            paths:{\n                                message: \"$.MESSAGE\",\n                                log_level_num: \"$.PRIORITY\",\n                                facility_num: \"$.SYSLOG_FACILITY\",\n                                application_name: \"$.SYSLOG_IDENTIFIER\",\n                                timestamp_log: \"$.__REALTIME_TIMESTAMP\",\n                                transport: \"$._TRANSPORT\",\n                                cmd_line: \"$._CMDLINE\",\n                                unit_systemd: \"$._SYSTEMD_UNIT\",\n                                unit_user: \"$.USER_UNIT\",\n                                unit: \"$.UNIT\",\n                                user: \"$.USER\",\n                                user_id: \"$.USER_ID\",\n                                kernel_device: \"$._KERNEL_DEVICE\",\n                                kernel_sybsytem: \"$._KERNEL_SUBSYSTEM\"\n                            }\n                        ); \n    set_fields(fields: parsed_fields);\n\n    let timestamp_log_milliseconds = to_long($message.timestamp_log) / 1000;\n    let parse_timestamp_log = parse_unix_milliseconds(\n                                value: timestamp_log_milliseconds, \n                                timezone: to_string(\"Europe/Moscow\")\n                               ); \n    let formatted_timestamp_log = format_date(\n                                    value: parse_timestamp_log, \n                                    format: \"yyyy-MM-dd HH:mm:ss.SSS ZZ\", \n                                    timezone: to_string(\"Europe/Moscow\")\n                                   );\n    set_field(field: \"timestamp_log\", value: formatted_timestamp_log);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "6f31fcda-dca4-4441-b865-62a37391c66d",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add formatted timestamp_log field to ONE messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add formatted timestamp_log field to ONE messages\"\n\nwhen\n    has_field(\"timestamp_log\")\n\nthen\n    let removed_double_space_timestamp_log = regex_replace(\n                                                pattern: \"  \", \n                                                value: to_string($message.timestamp_log), \n                                                replacement: \" \" \n                                             );\n    let parsed_timestamp_log = parse_date(\n                                value: removed_double_space_timestamp_log, \n                                pattern: \"E MMM d HH:mm:ss yyyy\", \n                                timezone: to_string(\"Europe/Moscow\")\n                              );\n    let formatted_timestamp_log = format_date(\n                                    value: parsed_timestamp_log, \n                                    format: \"yyyy-MM-dd HH:mm:ss.SSS ZZ\", \n                                    timezone: to_string(\"Europe/Moscow\")\n                                  );\n    set_field(field: \"timestamp_log\", value: formatted_timestamp_log);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "4fbecb53-7e8a-4b4c-aedb-7d2c2216bec1",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add formatted log_level field to ONE messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add formatted log_level field to ONE messages\"\n\nwhen\n    has_field(\"log_level\")\n\nthen\n    let formatted_log_level = lookup_value(\n                                lookup_table: \"l-t-one-loglevel\", \n                                key: to_string($message.log_level)\n                              );\n    set_field(field: \"log_level\", value: formatted_log_level);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "8f329395-c733-4e9b-a314-f03e53ca5e51",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "check belonging to messages from ONE"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"check belonging to messages from ONE\"\n\nwhen\n    to_string($message.SourceModuleName) == \"onefiles\"\n\nthen\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "lookup_adapter",
+        "version": "1"
+      },
+      "id": "ffb1695b-d624-45cf-9942-5703f57ae7e3",
+      "data": {
+        "name": {
+          "@type": "string",
+          "@value": "l-da-one-vms"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "l-da-one-vms"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Lookup data adapter for OpenNebula VMs"
+        },
+        "configuration": {
+          "type": {
+            "@type": "string",
+            "@value": "csvfile"
+          },
+          "path": {
+            "@type": "string",
+            "@value": "/etc/graylog/lookup-tables/l-t-one-vms.csv"
+          },
+          "separator": {
+            "@type": "string",
+            "@value": ";"
+          },
+          "quotechar": {
+            "@type": "string",
+            "@value": " "
+          },
+          "key_column": {
+            "@type": "string",
+            "@value": "ID"
+          },
+          "value_column": {
+            "@type": "string",
+            "@value": "NAME"
+          },
+          "check_interval": {
+            "@type": "long",
+            "@value": 60
+          },
+          "case_insensitive_lookup": {
+            "@type": "boolean",
+            "@value": true
+          }
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "lookup_adapter",
+        "version": "1"
+      },
+      "id": "89637ac3-c76b-43fa-8ba4-b31f25fc5503",
+      "data": {
+        "name": {
+          "@type": "string",
+          "@value": "l-da-one-loglevel"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "l-da-one-loglevel"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Lookup data adapter for OpenNebula log level"
+        },
+        "configuration": {
+          "type": {
+            "@type": "string",
+            "@value": "csvfile"
+          },
+          "path": {
+            "@type": "string",
+            "@value": "/etc/graylog/lookup-tables/l-t-one-loglevel.csv"
+          },
+          "separator": {
+            "@type": "string",
+            "@value": ","
+          },
+          "quotechar": {
+            "@type": "string",
+            "@value": "\""
+          },
+          "key_column": {
+            "@type": "string",
+            "@value": "short_log_level"
+          },
+          "value_column": {
+            "@type": "string",
+            "@value": "log_level"
+          },
+          "check_interval": {
+            "@type": "long",
+            "@value": 60
+          },
+          "case_insensitive_lookup": {
+            "@type": "boolean",
+            "@value": true
+          }
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "lookup_cache",
+        "version": "1"
+      },
+      "id": "ed003244-5eb1-45c2-8815-5771605bc279",
+      "data": {
+        "name": {
+          "@type": "string",
+          "@value": "l-c-one-loglevel"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "l-c-one-loglevel"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Lookup cache for OpenNebula log level"
+        },
+        "configuration": {
+          "type": {
+            "@type": "string",
+            "@value": "guava_cache"
+          },
+          "max_size": {
+            "@type": "integer",
+            "@value": 1000
+          },
+          "expire_after_access": {
+            "@type": "long",
+            "@value": 60
+          },
+          "expire_after_access_unit": {
+            "@type": "string",
+            "@value": "SECONDS"
+          },
+          "expire_after_write": {
+            "@type": "long",
+            "@value": 0
+          }
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "f6f86e0d-202d-4e47-94de-f57ae94daea8",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add application_name field (if missed) to systemd-journal logs messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add application_name field (if missed) to systemd-journal logs messages\"\n\nwhen\n    has_field(\"message\") && has_field(\"unit_systemd\") && ! has_field(\"application_name\")\n\nthen\n    let parsed_application_name_field = grok(\n                                            pattern: \"%{UNITNAME_FROM_SYSTEMD_UNIT}\", \n                                            value: to_string($message.unit_systemd), \n                                            only_named_captures: true\n                                        );\n    set_fields(fields: parsed_application_name_field);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "e5c53b02-206c-4aed-9cbb-166ade76fd1f",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add converted log_level field to systemd-journal logs messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add converted log_level field to systemd-journal logs messages\"\n\nwhen\n    has_field(\"message\") && has_field(\"log_level_num\")\n    \nthen\n    let converted_log_level = syslog_level(value: $message.log_level_num);\n    set_field(field: \"log_level\", value: converted_log_level);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "ecc5ebe7-a8ce-41ef-a635-1fd0907ddf54",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add parsed fields to ONE Sunstone/OneFlow messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add parsed fields to ONE Sunstone/OneFlow messages\"\n\nwhen\n    to_string($message.application_name) == \"sunstone\" ||\n    to_string($message.application_name) == \"oneflow\"\n\nthen\n    let parsed_fields = grok(\n                            pattern: \"%{ONE_SS_OF_MSG}\", \n                            value: to_string($message.message), \n                            only_named_captures: true\n                        );\n    set_fields(parsed_fields);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "dashboard",
+        "version": "2"
+      },
+      "id": "d69105ef-ee94-41a1-945d-5971113ee2c3",
+      "data": {
+        "summary": {
+          "@type": "string",
+          "@value": "Dashboard for Cloud by OpenNebula"
+        },
+        "search": {
+          "queries": [
+            {
+              "id": "a1647eb6-a064-4fe6-b459-1e4267d3f659",
+              "timerange": {
+                "type": "relative",
+                "range": 300
+              },
+              "query": {
+                "type": "elasticsearch",
+                "query_string": ""
+              },
+              "search_types": [
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "NOT message:Condition check resulted in OpenNebula SSH persistent connection cleaner being skipped."
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "from": 1800
+                  },
+                  "offset": 0,
+                  "streams": [
+                    "1f5c2b66-d322-4638-bbea-582bc28cc96c"
+                  ],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "e8d0f88a-19d1-4228-b40e-05105dd569c3",
+                  "limit": 150
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "NOT application_name:(sunstone OR oneflow OR fireedge)"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "from": 1800
+                  },
+                  "offset": 0,
+                  "streams": [
+                    "1ac3bf67-df24-4f19-be34-135792f7dde3"
+                  ],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "449994a8-590c-4058-8cef-d298860fdccb",
+                  "limit": 150
+                },
+                {
+                  "query": null,
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "range": 300
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "Message count",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "source",
+                      "limit": 15
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "6f27338c-7ac0-4ff6-b6de-4bee9ef4d953",
+                  "column_groups": [],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "count()",
+                      "direction": "Descending"
+                    }
+                  ]
+                },
+                {
+                  "query": {
+                    "type": "elasticsearch",
+                    "query_string": "application_name:(sunstone OR oneflow OR fireedge)"
+                  },
+                  "name": null,
+                  "timerange": {
+                    "type": "relative",
+                    "from": 1800
+                  },
+                  "offset": 0,
+                  "streams": [
+                    "1ac3bf67-df24-4f19-be34-135792f7dde3"
+                  ],
+                  "filter": null,
+                  "decorators": [],
+                  "type": "messages",
+                  "id": "30c01413-4bf4-48b4-adfa-3cb6cc3eff8f",
+                  "limit": 150
+                },
+                {
+                  "query": null,
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "range": 300
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "Message count",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "time",
+                      "field": "timestamp",
+                      "interval": {
+                        "type": "auto",
+                        "scaling": 1
+                      }
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "48e63819-ae8f-460d-a261-8ab709c7e5c0",
+                  "column_groups": [],
+                  "sort": []
+                },
+                {
+                  "query": null,
+                  "name": "chart",
+                  "timerange": {
+                    "type": "relative",
+                    "range": 300
+                  },
+                  "streams": [],
+                  "series": [
+                    {
+                      "type": "count",
+                      "id": "Message count",
+                      "field": null
+                    }
+                  ],
+                  "filter": null,
+                  "rollup": true,
+                  "row_groups": [
+                    {
+                      "type": "values",
+                      "field": "source",
+                      "limit": 10
+                    }
+                  ],
+                  "type": "pivot",
+                  "id": "f8e49716-8b6d-4b45-b182-06a151d3fc77",
+                  "column_groups": [],
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "count()",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "parameters": [],
+          "requires": {},
+          "owner": "admin",
+          "created_at": "2021-10-20T17:11:39.978Z"
+        },
+        "created_at": "2019-11-22T10:54:50.950Z",
+        "requires": {},
+        "state": {
+          "a1647eb6-a064-4fe6-b459-1e4267d3f659": {
+            "selected_fields": null,
+            "static_message_list_id": null,
+            "titles": {
+              "tab": {
+                "title": "ONE Fronts"
+              },
+              "widget": {
+                "6c127c5d-be75-4157-b43f-ac0194ac0586": "Selected sources",
+                "92d63811-e4dd-47db-bd3b-db03c8a9bd53": "Messages per Source",
+                "00637e63-d728-4b3e-932b-7c8696b4855d": "Messages over time",
+                "17688e8a-f7f6-4ba4-9d6d-b362b3968862": "OS logs",
+                "58fcf15d-52f6-4da1-9f17-9b27d33a8bbb": "OpenNebula logs",
+                "b0e75463-e9b7-4658-96d9-f9e384c924b2": "ONE Sunstone/OpenFlow/FireEdge"
+              }
+            },
+            "widgets": [
+              {
+                "id": "17688e8a-f7f6-4ba4-9d6d-b362b3968862",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 1800
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "NOT message:Condition check resulted in OpenNebula SSH persistent connection cleaner being skipped."
+                },
+                "streams": [
+                  "1f5c2b66-d322-4638-bbea-582bc28cc96c"
+                ],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "application_name",
+                    "log_level"
+                  ],
+                  "show_message_row": true,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "58fcf15d-52f6-4da1-9f17-9b27d33a8bbb",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 1800
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "NOT application_name:(sunstone OR oneflow OR fireedge)"
+                },
+                "streams": [
+                  "1ac3bf67-df24-4f19-be34-135792f7dde3"
+                ],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "application_name",
+                    "log_level"
+                  ],
+                  "show_message_row": true,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "b0e75463-e9b7-4658-96d9-f9e384c924b2",
+                "type": "messages",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "from": 1800
+                },
+                "query": {
+                  "type": "elasticsearch",
+                  "query_string": "application_name:(sunstone OR oneflow OR fireedge)"
+                },
+                "streams": [
+                  "1ac3bf67-df24-4f19-be34-135792f7dde3"
+                ],
+                "config": {
+                  "fields": [
+                    "timestamp",
+                    "source",
+                    "application_name",
+                    "log_level",
+                    "client",
+                    "http_method",
+                    "http_status_code"
+                  ],
+                  "show_message_row": true,
+                  "decorators": [],
+                  "sort": [
+                    {
+                      "type": "pivot",
+                      "field": "timestamp",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "00637e63-d728-4b3e-932b-7c8696b4855d",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 300
+                },
+                "query": null,
+                "streams": [],
+                "config": {
+                  "visualization": "line",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "timestamp",
+                      "type": "time",
+                      "config": {
+                        "interval": {
+                          "type": "auto",
+                          "scaling": 1
+                        }
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": "Message count"
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": []
+                }
+              },
+              {
+                "id": "92d63811-e4dd-47db-bd3b-db03c8a9bd53",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 300
+                },
+                "query": null,
+                "streams": [],
+                "config": {
+                  "visualization": "pie",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "source",
+                      "type": "values",
+                      "config": {
+                        "limit": 10
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": "Message count"
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "count()",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "6c127c5d-be75-4157-b43f-ac0194ac0586",
+                "type": "aggregation",
+                "filter": null,
+                "timerange": {
+                  "type": "relative",
+                  "range": 300
+                },
+                "query": null,
+                "streams": [],
+                "config": {
+                  "visualization": "table",
+                  "event_annotation": false,
+                  "row_pivots": [
+                    {
+                      "field": "source",
+                      "type": "values",
+                      "config": {
+                        "limit": 15
+                      }
+                    }
+                  ],
+                  "series": [
+                    {
+                      "config": {
+                        "name": "Message count"
+                      },
+                      "function": "count()"
+                    }
+                  ],
+                  "rollup": true,
+                  "column_pivots": [],
+                  "visualization_config": null,
+                  "formatting_settings": null,
+                  "sort": [
+                    {
+                      "type": "series",
+                      "field": "count()",
+                      "direction": "Descending"
+                    }
+                  ]
+                }
+              }
+            ],
+            "widget_mapping": {
+              "6c127c5d-be75-4157-b43f-ac0194ac0586": [
+                "6f27338c-7ac0-4ff6-b6de-4bee9ef4d953"
+              ],
+              "17688e8a-f7f6-4ba4-9d6d-b362b3968862": [
+                "e8d0f88a-19d1-4228-b40e-05105dd569c3"
+              ],
+              "00637e63-d728-4b3e-932b-7c8696b4855d": [
+                "48e63819-ae8f-460d-a261-8ab709c7e5c0"
+              ],
+              "92d63811-e4dd-47db-bd3b-db03c8a9bd53": [
+                "f8e49716-8b6d-4b45-b182-06a151d3fc77"
+              ],
+              "58fcf15d-52f6-4da1-9f17-9b27d33a8bbb": [
+                "449994a8-590c-4058-8cef-d298860fdccb"
+              ],
+              "b0e75463-e9b7-4658-96d9-f9e384c924b2": [
+                "30c01413-4bf4-48b4-adfa-3cb6cc3eff8f"
+              ]
+            },
+            "positions": {
+              "6c127c5d-be75-4157-b43f-ac0194ac0586": {
+                "col": 1,
+                "row": 21,
+                "height": 4,
+                "width": 6
+              },
+              "17688e8a-f7f6-4ba4-9d6d-b362b3968862": {
+                "col": 7,
+                "row": 6,
+                "height": 6,
+                "width": 6
+              },
+              "00637e63-d728-4b3e-932b-7c8696b4855d": {
+                "col": 1,
+                "row": 17,
+                "height": 4,
+                "width": "Infinity"
+              },
+              "92d63811-e4dd-47db-bd3b-db03c8a9bd53": {
+                "col": 7,
+                "row": 21,
+                "height": 4,
+                "width": 6
+              },
+              "58fcf15d-52f6-4da1-9f17-9b27d33a8bbb": {
+                "col": 1,
+                "row": 6,
+                "height": 6,
+                "width": 6
+              },
+              "b0e75463-e9b7-4658-96d9-f9e384c924b2": {
+                "col": 1,
+                "row": 12,
+                "height": 5,
+                "width": "Infinity"
+              }
+            },
+            "formatting": {
+              "highlighting": []
+            },
+            "display_mode_settings": {
+              "positions": {}
+            }
+          }
+        },
+        "properties": [],
+        "owner": "admin",
+        "title": {
+          "@type": "string",
+          "@value": "OpenNebula Cloud"
+        },
+        "type": "DASHBOARD",
+        "description": {
+          "@type": "string",
+          "@value": ""
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "fff8cc86-2d05-4be6-ac25-79cda46ba0c7",
+      "data": {
+        "name": "LOGLEVEL",
+        "pattern": "([Aa]lert|ALERT|[Tt]race|TRACE|[Dd]ebug|DEBUG|[Nn]otice|NOTICE|[Ii]nfo|INFO|[Ww]arn?(?:ing)?|WARN?(?:ING)?|[Ee]rr?(?:or)?|ERR?(?:OR)?|[Cc]rit?(?:ical)?|CRIT?(?:ICAL)?|[Ff]atal|FATAL|[Ss]evere|SEVERE|EMERG(?:ENCY)?|[Ee]merg(?:ency)?)"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "9f504b9e-d145-4fda-86f1-9aa4a3d5fc69",
+      "data": {
+        "name": "ONE_TIMESTAMP",
+        "pattern": "%{DAY}\\s+%{MONTH}\\s+%{MONTHDAY}\\s+%{NUMBER}:%{NUMBER}:%{NUMBER}\\s+%{YEAR}"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline",
+        "version": "1"
+      },
+      "id": "59e0dc91-1cba-4027-93c0-2baa0ef3be69",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "ONE Fronts OS"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "This pipeline for parsing operation system logs (systemd-journal) of front-end servers"
+        },
+        "source": {
+          "@type": "string",
+          "@value": "pipeline \"ONE Fronts OS\"\nstage 0 match all\nrule \"parse systemd-journal logs from sidecars messages\"\nstage 1 match either\nrule \"add converted facility field to systemd-journal logs messages\"\nstage 2 match either\nrule \"add converted log_level field to systemd-journal logs messages\"\nstage 3 match either\nrule \"add application_name field (if missed) to systemd-journal logs messages\"\nend"
+        },
+        "connected_streams": [
+          {
+            "@type": "string",
+            "@value": "1f5c2b66-d322-4638-bbea-582bc28cc96c"
+          }
+        ]
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "fca540a9-a9bd-48ea-8037-2e94cd2e9b57",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "check for ONE HTTP logs pattern in messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"check for ONE HTTP logs pattern in messages\"\n\nwhen\n    regex(\n        pattern: \"(?:GET|POST|HEAD|POST|PUT|DELETE|CONNECT|OPTIONS|TRACE|TRACE|PATCH) .+HTTP.+\", \n        value: to_string($message.message)\n    ).matches == true\n\nthen\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "stream",
+        "version": "1"
+      },
+      "id": "1ac3bf67-df24-4f19-be34-135792f7dde3",
+      "data": {
+        "alarm_callbacks": [],
+        "outputs": [],
+        "remove_matches": {
+          "@type": "boolean",
+          "@value": true
+        },
+        "title": {
+          "@type": "string",
+          "@value": "OpenNebula Frontends Stream"
+        },
+        "stream_rules": [
+          {
+            "type": {
+              "@type": "string",
+              "@value": "CONTAINS"
+            },
+            "field": {
+              "@type": "string",
+              "@value": "collector_node_id"
+            },
+            "value": {
+              "@type": "string",
+              "@value": "oness"
+            },
+            "inverted": {
+              "@type": "boolean",
+              "@value": false
+            },
+            "description": {
+              "@type": "string",
+              "@value": ""
+            }
+          },
+          {
+            "type": {
+              "@type": "string",
+              "@value": "EXACT"
+            },
+            "field": {
+              "@type": "string",
+              "@value": "SourceModuleName"
+            },
+            "value": {
+              "@type": "string",
+              "@value": "onefiles"
+            },
+            "inverted": {
+              "@type": "boolean",
+              "@value": false
+            },
+            "description": {
+              "@type": "string",
+              "@value": ""
+            }
+          }
+        ],
+        "alert_conditions": [],
+        "matching_type": {
+          "@type": "string",
+          "@value": "AND"
+        },
+        "disabled": {
+          "@type": "boolean",
+          "@value": false
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Messages from OpenNebula services"
+        },
+        "default_stream": {
+          "@type": "boolean",
+          "@value": false
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "lookup_cache",
+        "version": "1"
+      },
+      "id": "339eaece-1520-44e3-95e9-0f22993cbfad",
+      "data": {
+        "name": {
+          "@type": "string",
+          "@value": "l-c-one-zone"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "l-c-one-zone"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Lookup cache for OpenNebula zone id"
+        },
+        "configuration": {
+          "type": {
+            "@type": "string",
+            "@value": "guava_cache"
+          },
+          "max_size": {
+            "@type": "integer",
+            "@value": 1000
+          },
+          "expire_after_access": {
+            "@type": "long",
+            "@value": 60
+          },
+          "expire_after_access_unit": {
+            "@type": "string",
+            "@value": "SECONDS"
+          },
+          "expire_after_write": {
+            "@type": "long",
+            "@value": 0
+          }
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "lookup_table",
+        "version": "1"
+      },
+      "id": "130bb860-1953-4b48-8bbf-ce0561d08fce",
+      "data": {
+        "default_single_value_type": {
+          "@type": "string",
+          "@value": "STRING"
+        },
+        "cache_name": {
+          "@type": "string",
+          "@value": "ed003244-5eb1-45c2-8815-5771605bc279"
+        },
+        "name": {
+          "@type": "string",
+          "@value": "l-t-one-loglevel"
+        },
+        "default_multi_value_type": {
+          "@type": "string",
+          "@value": "NULL"
+        },
+        "default_multi_value": {
+          "@type": "string",
+          "@value": ""
+        },
+        "data_adapter_name": {
+          "@type": "string",
+          "@value": "89637ac3-c76b-43fa-8ba4-b31f25fc5503"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "l-t-one-loglevel"
+        },
+        "default_single_value": {
+          "@type": "string",
+          "@value": "undefined"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Lookup table for OpenNebula log level"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "f8caa61a-7f63-4b03-bdfc-44a07c96e835",
+      "data": {
+        "name": "ONE_SS_MSG",
+        "pattern": "\"%{WORD:http_method} %{GREEDYDATA:http_request_uri} HTTP/%{NUMBER:http_version}\" %{NUMBER:http_status_code} %{GREEDYDATA} %{NUMBER:http_request_time}"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "bea86bcc-8184-4def-9958-bedb9fef6e76",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add vm_id and vm_name fields to ONE messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add vm_id and vm_name fields to ONE messages\"\n\nwhen\n    to_string($message.application_name) == \"virtualmachine\"\n\nthen\n    let parsed_vm_id = regex(\n                        pattern: \"([0-9]+)(?=.log$)\", \n                        value: to_string($message.FileName), \n                        group_names: [\"id\"]\n                       );\n    set_field(field: \"vm_id\", value: parsed_vm_id[\"id\"]);\n    \n    let vm_name = lookup_value(\n                    lookup_table: \"l-t-one-vms\", \n                    key: to_string($message.vm_id)\n                  );\n    set_field(field: \"virtual_machine_name\", value: vm_name);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "7ff3cdf2-86b7-425f-b7e6-7f7692a22a0e",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add parsed fields to ONE FireEdge messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add parsed fields to ONE FireEdge messages\"\n\nwhen\n    to_string($message.application_name) == \"fireedge\"\n\nthen\n    let parsed_fields = grok(\n                            pattern: \"%{ONE_SS_CLIENT_TIMESTAMP} %{ONE_FE_MSG:message}\", \n                            value: to_string($message.message), \n                            only_named_captures: true\n                        );\n    set_fields(fields: parsed_fields);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "3a414103-ad3a-4773-9552-f2de756259ec",
+      "data": {
+        "name": "ONE_SUNSTONE_LOG_CUT_MESSAGE",
+        "pattern": "\\[%{HTTPDATE}\\] %{GREEDYDATA:message}"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "548c0fb9-5f1f-4fa8-8851-3eb7acc717c6",
+      "data": {
+        "name": "ONE_LOG_LEVEL",
+        "pattern": "\\[%{ONE_LOGLEVEL:log_level}\\]:"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "lookup_cache",
+        "version": "1"
+      },
+      "id": "97aef60d-da22-4ad4-a7e6-18313dde14b8",
+      "data": {
+        "name": {
+          "@type": "string",
+          "@value": "l-c-one-vms"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "l-c-one-vms"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Lookup cache for OpenNebula VMs"
+        },
+        "configuration": {
+          "type": {
+            "@type": "string",
+            "@value": "guava_cache"
+          },
+          "max_size": {
+            "@type": "integer",
+            "@value": 1000
+          },
+          "expire_after_access": {
+            "@type": "long",
+            "@value": 60
+          },
+          "expire_after_access_unit": {
+            "@type": "string",
+            "@value": "SECONDS"
+          },
+          "expire_after_write": {
+            "@type": "long",
+            "@value": 0
+          }
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "sidecar_collector_configuration",
+        "version": "1"
+      },
+      "id": "84995247-85ae-4534-aa7d-8896bac5a585",
+      "data": {
+        "collector_id": {
+          "@type": "string",
+          "@value": "76d933bc-9a03-4933-8d62-9fd23cb310d1"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "oned-config"
+        },
+        "color": {
+          "@type": "string",
+          "@value": "#b3e5fc"
+        },
+        "template": {
+          "@type": "string",
+          "@value": "define ROOT /usr/bin\n\n<Extension gelfExt>\n  Module xm_gelf\n  # Avoid truncation of the short_message field to 64 characters.\n  ShortMessageLength 65536\n</Extension>\n\nUser nxlog\nGroup nxlog\n\nModuledir /usr/lib/nxlog/modules\nCacheDir /var/spool/nxlog/data\nPidFile /var/run/nxlog.pid\nLogFile /var/log/nxlog/nxlog.log\nLogLevel INFO\n\n\n<Input onefiles>\n\tModule im_file\n\tFile '/var/log/one/*.log'\n\tPollInterval 1\n\tSavePos\tTrue\n\tReadFromLast True\n\tRecursive False\n\tRenameCheck False\n\tExec $FileName = file_name(); # Send file name with each message\n</Input>\n\n<Input systemd-journal>\n    Module    im_exec\n    Command   /usr/lib/nxlog/modules/input/systemd-journal-tail.sh\n</Input>\n\n<Output gelf>\n\tModule om_tcp\n\tHost 172.31.104.112\n\tPort 12201\n\tOutputType  GELF_TCP\n\t<Exec>\n\t  # These fields are needed for Graylog\n\t  $gl2_source_collector = '${sidecar.nodeId}';\n\t  $collector_node_id = '${sidecar.nodeName}';\n\t</Exec>\n</Output>\n\n<Output gelf-systemd>\n\tModule om_tcp\n\tHost 172.31.104.112\n\tPort 12201\n\tOutputType  GELF_TCP\n\t<Exec>\n\t  # These fields are needed for Graylog\n\t  $gl2_source_collector = '${sidecar.nodeId}';\n\t  $collector_node_id = '${sidecar.nodeName}';\n\t</Exec>\n</Output>\n\n<Route onefiles-route>\n  Path onefiles => gelf\n</Route>\n\n<Route systemd-route>\n  Path systemd-journal => gelf-systemd\n</Route>\n\n\n"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "818a0357-45ff-4498-a3de-75aef0433f86",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add application_name field to ONE VMs messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add application_name field to ONE VMs messages\"\n\nwhen\n    regex(\n        pattern: \"([0-9]+)(?=.log$)\", \n        value: to_string($message.FileName)\n    ).matches == true\n\nthen\n    set_field(field: \"application_name\", value: \"virtualmachine\");\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "cde3640d-e3a2-4b61-8d40-365a57987110",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add converted facility field to systemd-journal logs messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add converted facility field to systemd-journal logs messages\"\n\nwhen\n    has_field(\"message\") && has_field(\"facility_num\")\n    \nthen\n    let converted_facility = syslog_facility(value: $message.facility_num);\n    set_field(field: \"facility\", value: converted_facility);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "f67e6865-9cb7-4d61-901f-f1ef90739108",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "check for existence of fields in NXLog messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"check for existence of fields in NXLog messages\"\n\nwhen\n    has_field(\"message\") &&\n    has_field(\"FileName\") &&\n    has_field(\"SourceModuleName\")\n\nthen\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "8f32a25d-90c7-480e-aaa3-d4339eac0874",
+      "data": {
+        "name": "LOGNAME",
+        "pattern": "%{WORD:UNWANTED}\\.log"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "8bbd9a3d-d329-42d1-a003-6626706e214d",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add application_name field to NXLog messages from FileName field"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add application_name field to NXLog messages from FileName field\"\n\nwhen\n    regex(\n        pattern: \"([0-9]+)(?=.log$)\", \n        value: to_string($message.FileName)\n    ).matches == false\n\nthen\n    let message_field = to_string($message.FileName);\n    let application_name = grok(\n                            pattern: \"%{LOGNAME_FROM_PATH}\", \n                            value: message_field, \n                            only_named_captures: true\n                           );\n    set_fields(application_name);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "a0cb2851-7912-4807-8e87-bf9bd15a7b06",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add zone_name field to ONE messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add zone_name field to ONE messages\"\n\nwhen\n    has_field(\"zone_id\")\n\nthen\n    let zone_name = lookup_value(\n                        lookup_table: \"l-t-one-zone\", \n                        key: to_string($message.zone_id)\n                    );\n    set_field(field: \"zone_name\", value: zone_name);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "3e2f15e5-ba95-46fc-9253-62e34446905f",
+      "data": {
+        "name": "ONE_LOGLEVEL",
+        "pattern": "([Aa]lert|ALERT|[Aa]|[Tt]race|TRACE|[Tt]|[Dd]ebug|DEBUG|[Dd]|[Nn]otice|NOTICE|[Nn]|[Ii]nfo|INFO|[Ii]|[Ww]arn?(?:ing)?|WARN?(?:ING)?|[Ww]|[Ee]rr?(?:or)?|ERR?(?:OR)?|[Ee]|[Cc]rit?(?:ical)?|CRIT?(?:ICAL)?|[Cc]|[Ff]atal|FATAL|[Ff]|[Ss]evere|SEVERE|EMERG(?:ENCY)?|[Ss]|[Ee]merg(?:ency)?)|[Ee]"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "dfa93e0e-f798-4332-9c4a-d5c071bf5778",
+      "data": {
+        "name": "ONE_SS_CLIENT_TIMESTAMP",
+        "pattern": "%{IPORHOST:client} %{GREEDYDATA} %{GREEDYDATA} \\[%{HTTPDATE:timestamp_http_request}\\]"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "e93a920e-ffe0-424b-a853-857537b92926",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add parsed fields to ONE messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add parsed fields to ONE messages\"\n\nwhen\n    to_string($message.application_name) == \"oned\"    ||\n    to_string($message.application_name) == \"sched\"   ||\n    to_string($message.application_name) == \"monitor\" ||\n    to_string($message.application_name) == \"virtualmachine\" \n\nthen\n    let parsed_fields = grok(\n                            pattern: \"%{ONE_TIMESTAMP:timestamp_log} %{ONE_LOG}: %{GREEDYDATA:message}\", \n                            value: to_string($message.message), \n                            only_named_captures: true\n                        );\n    set_fields(fields: parsed_fields);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "lookup_adapter",
+        "version": "1"
+      },
+      "id": "eab08383-e472-44f5-808a-49bbf68d273f",
+      "data": {
+        "name": {
+          "@type": "string",
+          "@value": "l-da-one-zone"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "l-da-one-zone"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Lookup data adapter for OpenNebula zone id"
+        },
+        "configuration": {
+          "type": {
+            "@type": "string",
+            "@value": "csvfile"
+          },
+          "path": {
+            "@type": "string",
+            "@value": "/etc/graylog/lookup-tables/l-t-one-zone.csv"
+          },
+          "separator": {
+            "@type": "string",
+            "@value": ","
+          },
+          "quotechar": {
+            "@type": "string",
+            "@value": "\""
+          },
+          "key_column": {
+            "@type": "string",
+            "@value": "zone_id"
+          },
+          "value_column": {
+            "@type": "string",
+            "@value": "zone_name"
+          },
+          "check_interval": {
+            "@type": "long",
+            "@value": 60
+          },
+          "case_insensitive_lookup": {
+            "@type": "boolean",
+            "@value": true
+          }
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "a3d1015b-c6de-4138-8b0a-fc7c3836a9b5",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "add formatted timestamp_http_reques field to ONE messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"add formatted timestamp_http_reques field to ONE messages\"\n\nwhen\n    has_field(\"timestamp_http_request\")\n\nthen\n    let parsed_timestamp_http_request = parse_date(\n                                            value: to_string($message.timestamp_http_request), \n                                            pattern: \"d/MMM/yyyy:HH:mm:ss Z\", \n                                            timezone: to_string(\"Europe/Moscow\")\n                                        );\n    let formatted_timestamp_http_request = format_date(\n                                            value: parsed_timestamp_http_request, \n                                            format: \"yyyy-MM-dd HH:mm:ss.SSS ZZ\", \n                                            timezone: to_string(\"Europe/Moscow\")\n                                           );\n    set_field(field: \"timestamp_http_request\", value: formatted_timestamp_http_request);\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline_rule",
+        "version": "1"
+      },
+      "id": "16b85c66-1624-42fd-bd51-5bea0545bc1a",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "check for ONE timestamp in messages"
+        },
+        "description": {
+          "@type": "string",
+          "@value": ""
+        },
+        "source": {
+          "@type": "string",
+          "@value": "rule \"check for ONE timestamp in messages\"\n\nwhen\n    regex(\n        pattern: \"^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) +(?:Jan|Feb|Mar|Apr|May|Jun(?:e)?|Jul(?:y)?|Aug|Sep(?:t)?|Oct|Nov|Dec)\", \n        value: to_string($message.message)\n    ).matches == true\n\nthen\nend"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "lookup_table",
+        "version": "1"
+      },
+      "id": "e2244afc-3440-45ac-8ff3-689c9cafc037",
+      "data": {
+        "default_single_value_type": {
+          "@type": "string",
+          "@value": "STRING"
+        },
+        "cache_name": {
+          "@type": "string",
+          "@value": "97aef60d-da22-4ad4-a7e6-18313dde14b8"
+        },
+        "name": {
+          "@type": "string",
+          "@value": "l-t-one-vms"
+        },
+        "default_multi_value_type": {
+          "@type": "string",
+          "@value": "NULL"
+        },
+        "default_multi_value": {
+          "@type": "string",
+          "@value": ""
+        },
+        "data_adapter_name": {
+          "@type": "string",
+          "@value": "ffb1695b-d624-45cf-9942-5703f57ae7e3"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "l-t-one-vms"
+        },
+        "default_single_value": {
+          "@type": "string",
+          "@value": "undefined "
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Lookup table for OpenNebula VMs"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "67683c96-6164-4635-a32b-b6bc71eff832",
+      "data": {
+        "name": "ONE_FE_MSG",
+        "pattern": "\"%{WORD:http_method} %{GREEDYDATA:http_request_uri} HTTP/%{NUMBER:http_version}\" %{NUMBER:http_status_code} (?:%{NUMBER:bytes}|-) (?:\"(?:%{URI:http_referrer}|-)\"|%{QS:http_referrer}) %{QS:user_agent} "
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "9c3ed6d3-5d15-489a-8214-4935adfcd243",
+      "data": {
+        "name": "ONE_SS_OF_MSG",
+        "pattern": "%{ONE_TIMESTAMP:timestamp_log} %{ONE_LOG_LEVEL} ((%{ONE_SS_CLIENT_TIMESTAMP} %{ONE_SS_MSG:message})|%{GREEDYDATA:message})\n\n"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "stream",
+        "version": "1"
+      },
+      "id": "1f5c2b66-d322-4638-bbea-582bc28cc96c",
+      "data": {
+        "alarm_callbacks": [],
+        "outputs": [],
+        "remove_matches": {
+          "@type": "boolean",
+          "@value": true
+        },
+        "title": {
+          "@type": "string",
+          "@value": "OpenNebula Frontends OS Stream"
+        },
+        "stream_rules": [
+          {
+            "type": {
+              "@type": "string",
+              "@value": "CONTAINS"
+            },
+            "field": {
+              "@type": "string",
+              "@value": "source"
+            },
+            "value": {
+              "@type": "string",
+              "@value": "oness"
+            },
+            "inverted": {
+              "@type": "boolean",
+              "@value": false
+            },
+            "description": {
+              "@type": "string",
+              "@value": ""
+            }
+          },
+          {
+            "type": {
+              "@type": "string",
+              "@value": "EXACT"
+            },
+            "field": {
+              "@type": "string",
+              "@value": "SourceModuleName"
+            },
+            "value": {
+              "@type": "string",
+              "@value": "onefiles"
+            },
+            "inverted": {
+              "@type": "boolean",
+              "@value": true
+            },
+            "description": {
+              "@type": "string",
+              "@value": ""
+            }
+          }
+        ],
+        "alert_conditions": [],
+        "matching_type": {
+          "@type": "string",
+          "@value": "AND"
+        },
+        "disabled": {
+          "@type": "boolean",
+          "@value": false
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Messages from journald and OS services"
+        },
+        "default_stream": {
+          "@type": "boolean",
+          "@value": false
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "pipeline",
+        "version": "1"
+      },
+      "id": "24669805-642a-4311-a69b-04d4e83f9838",
+      "data": {
+        "title": {
+          "@type": "string",
+          "@value": "ONE Fronts"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "This pipeline for parsing OpenNebula logs of front-end servers"
+        },
+        "source": {
+          "@type": "string",
+          "@value": "pipeline \"ONE Fronts\"\nstage 0 match all\nrule \"check for existence of fields in NXLog messages\"\nrule \"check belonging to messages from ONE\"\nstage 1 match either\nrule \"add application_name field to ONE VMs messages\"\nrule \"add application_name field to NXLog messages from FileName field\"\nstage 3 match either\nrule \"add parsed fields to ONE messages\"\nrule \"add parsed fields to ONE Sunstone/OneFlow messages\"\nrule \"add parsed fields to ONE FireEdge messages\"\nstage 4 match either\nrule \"add formatted log_level field to ONE messages\"\nrule \"add formatted timestamp_log field to ONE messages\"\nrule \"add zone_name field to ONE messages\"\nrule \"add vm_id and vm_name fields to ONE messages\"\nrule \"add formatted timestamp_http_reques field to ONE messages\"\nstage 2 match either\nrule \"check for ONE timestamp in messages\"\nrule \"check for ONE HTTP logs pattern in messages\"\nend"
+        },
+        "connected_streams": [
+          {
+            "@type": "string",
+            "@value": "1ac3bf67-df24-4f19-be34-135792f7dde3"
+          }
+        ]
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "lookup_table",
+        "version": "1"
+      },
+      "id": "f1ad6480-0df4-4e25-a6b4-ccf3f62f0e77",
+      "data": {
+        "default_single_value_type": {
+          "@type": "string",
+          "@value": "STRING"
+        },
+        "cache_name": {
+          "@type": "string",
+          "@value": "339eaece-1520-44e3-95e9-0f22993cbfad"
+        },
+        "name": {
+          "@type": "string",
+          "@value": "l-t-one-zone"
+        },
+        "default_multi_value_type": {
+          "@type": "string",
+          "@value": "NULL"
+        },
+        "default_multi_value": {
+          "@type": "string",
+          "@value": ""
+        },
+        "data_adapter_name": {
+          "@type": "string",
+          "@value": "eab08383-e472-44f5-808a-49bbf68d273f"
+        },
+        "title": {
+          "@type": "string",
+          "@value": "l-t-one-zone"
+        },
+        "default_single_value": {
+          "@type": "string",
+          "@value": "undefined"
+        },
+        "description": {
+          "@type": "string",
+          "@value": "Lookup table for OpenNebula zone id"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "fd754367-9523-4824-b892-526a00fc0228",
+      "data": {
+        "name": "DATA",
+        "pattern": ".*?"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "bab910b4-3c75-4be4-a239-b059ca100a76",
+      "data": {
+        "name": "WORD",
+        "pattern": "\\b\\w+\\b"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "135a73c7-d1a9-48dd-a142-b04cdf338adf",
+      "data": {
+        "name": "MONTH",
+        "pattern": "\\b(?:Jan(?:uary|uar)?|Feb(?:ruary|ruar)?|M(?:a|ä)?r(?:ch|z)?|Apr(?:il)?|Ma(?:y|i)?|Jun(?:e|i)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|O(?:c|k)?t(?:ober)?|Nov(?:ember)?|De(?:c|z)(?:ember)?)\\b"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "516060d3-47b3-4023-b2cd-a7176b45be05",
+      "data": {
+        "name": "NUMBER",
+        "pattern": "(?:%{BASE10NUM})"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "5ca895ec-a2cc-4275-91ac-51117c06567e",
+      "data": {
+        "name": "YEAR",
+        "pattern": "(?>\\d\\d){1,2}"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "a9904857-66b6-4a30-ab34-563291e68ee9",
+      "data": {
+        "name": "DAY",
+        "pattern": "(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "f1aae690-c833-451d-90c8-868c14bee42e",
+      "data": {
+        "name": "MONTHDAY",
+        "pattern": "(?:(?:0[1-9])|(?:[12][0-9])|(?:3[01])|[1-9])"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "63f75c30-194d-4800-94ff-95623eac86ee",
+      "data": {
+        "name": "GREEDYDATA",
+        "pattern": ".*"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "60814473-cc3c-4f45-a4f0-1504f80ebb45",
+      "data": {
+        "name": "HTTPDATE",
+        "pattern": "%{MONTHDAY}/%{MONTH}/%{YEAR}:%{TIME} %{INT}"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "sidecar_collector",
+        "version": "1"
+      },
+      "id": "76d933bc-9a03-4933-8d62-9fd23cb310d1",
+      "data": {
+        "name": {
+          "@type": "string",
+          "@value": "nxlog"
+        },
+        "service_type": {
+          "@type": "string",
+          "@value": "exec"
+        },
+        "node_operating_system": {
+          "@type": "string",
+          "@value": "linux"
+        },
+        "executable_path": {
+          "@type": "string",
+          "@value": "/usr/bin/nxlog"
+        },
+        "execute_parameters": {
+          "@type": "string",
+          "@value": "-f -c %s"
+        },
+        "validation_parameters": {
+          "@type": "string",
+          "@value": "-v -c %s"
+        },
+        "default_template": {
+          "@type": "string",
+          "@value": "define ROOT /usr/bin\n\n<Extension gelfExt>\n  Module xm_gelf\n  # Avoid truncation of the short_message field to 64 characters.\n  ShortMessageLength 65536\n</Extension>\n\n<Extension syslogExt>\n  Module xm_syslog\n</Extension>\n\nUser nxlog\nGroup nxlog\n\nModuledir /usr/lib/nxlog/modules\nCacheDir /var/spool/nxlog/data\nPidFile /var/run/nxlog/nxlog.pid\nLogFile /var/log/nxlog/nxlog.log\nLogLevel INFO\n\n\n<Input file>\n\tModule im_file\n\tFile '/var/log/*.log'\n\tPollInterval 1\n\tSavePos\tTrue\n\tReadFromLast True\n\tRecursive False\n\tRenameCheck False\n\tExec $FileName = file_name(); # Send file name with each message\n</Input>\n\n#<Input syslog-udp>\n#\tModule im_udp\n#\tHost 127.0.0.1\n#\tPort 514\n#\tExec parse_syslog_bsd();\n#</Input>\n\n<Output gelf>\n\tModule om_tcp\n\tHost 172.31.104.112\n\tPort 12201\n\tOutputType  GELF_TCP\n\t<Exec>\n\t  # These fields are needed for Graylog\n\t  $gl2_source_collector = '${sidecar.nodeId}';\n\t  $collector_node_id = '${sidecar.nodeName}';\n\t</Exec>\n</Output>\n\n\n<Route route-1>\n  Path file => gelf\n</Route>\n#<Route route-2>\n#  Path syslog-udp => gelf\n#</Route>\n\n\n"
+        }
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "ef21bbab-281c-4ec1-a27a-dff4fa4c5b40",
+      "data": {
+        "name": "IPORHOST",
+        "pattern": "(?:%{IP}|%{HOSTNAME})"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "489dee70-4b9f-48fa-8ea3-a601e67728a7",
+      "data": {
+        "name": "QS",
+        "pattern": "%{QUOTEDSTRING}"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "8a5bd7dd-732e-47a9-a35b-b5483d351f6f",
+      "data": {
+        "name": "URI",
+        "pattern": "%{URIPROTO}://(?:%{USER}(?::[^@]*)?@)?(?:%{URIHOST})?(?:%{URIPATHPARAM})?"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "fd2421fa-e74b-4310-af3d-c5e499f16bc8",
+      "data": {
+        "name": "BASE10NUM",
+        "pattern": "(?<![0-9.+-])(?>[+-]?(?:(?:[0-9]+(?:\\.[0-9]+)?)|(?:\\.[0-9]+)))"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "64c959f9-1cf4-4fe0-9041-8eaeef5ba612",
+      "data": {
+        "name": "TIME",
+        "pattern": "(?!<[0-9])%{HOUR}:%{MINUTE}(?::%{SECOND})(?![0-9])"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "25f332c1-2994-441c-8f82-40b43e4f00e0",
+      "data": {
+        "name": "INT",
+        "pattern": "(?:[+-]?(?:[0-9]+))"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "d17be1af-26c2-486b-a116-69e8180d744d",
+      "data": {
+        "name": "HOSTNAME",
+        "pattern": "\\b(?:[0-9A-Za-z][0-9A-Za-z-]{0,62})(?:\\.(?:[0-9A-Za-z][0-9A-Za-z-]{0,62}))*(\\.?|\\b)"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "d65fbdaa-3c6a-4262-bddb-bee2a750e571",
+      "data": {
+        "name": "IP",
+        "pattern": "(?:%{IPV6}|%{IPV4})"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "c2a7fee7-6ebc-47f4-b49f-8413d39a68b1",
+      "data": {
+        "name": "QUOTEDSTRING",
+        "pattern": "(?>(?<!\\\\)(?>\"(?>\\\\.|[^\\\\\"]+)+\"|\"\"|(?>'(?>\\\\.|[^\\\\']+)+')|''|(?>`(?>\\\\.|[^\\\\`]+)+`)|``))"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "3f9e6a77-8cfb-4d9e-a9ea-42c901c050cb",
+      "data": {
+        "name": "URIHOST",
+        "pattern": "%{IPORHOST}(?::%{POSINT:port})?"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "fb004c4b-13a5-43e1-8eea-447c4d3330f9",
+      "data": {
+        "name": "URIPATHPARAM",
+        "pattern": "%{URIPATH}(?:%{URIPARAM})?"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "6858b4b3-f49b-47b8-af9d-2085f455118f",
+      "data": {
+        "name": "USER",
+        "pattern": "%{USERNAME}"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "44faa984-5c78-4937-b5fe-82f1f56c69c1",
+      "data": {
+        "name": "URIPROTO",
+        "pattern": "[A-Za-z]+(\\+[A-Za-z+]+)?"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "c5406f39-2216-4da4-b30a-b40cf6f5b152",
+      "data": {
+        "name": "HOUR",
+        "pattern": "(?:2[0123]|[01]?[0-9])"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "841a6333-f611-4d36-86e4-647189fc4b01",
+      "data": {
+        "name": "MINUTE",
+        "pattern": "(?:[0-5][0-9])"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "c76d4d13-68f8-4cfc-a049-21b5422f6933",
+      "data": {
+        "name": "SECOND",
+        "pattern": "(?:(?:[0-5]?[0-9]|60)(?:[:.,][0-9]+)?)"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "c478d931-f534-4820-b64c-88afd946e4f9",
+      "data": {
+        "name": "IPV6",
+        "pattern": "((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:)))(%.+)?"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "95195832-b93a-4459-9bbf-05c51215c667",
+      "data": {
+        "name": "IPV4",
+        "pattern": "(?<![0-9])(?:(?:[0-1]?[0-9]{1,2}|2[0-4][0-9]|25[0-5])[.](?:[0-1]?[0-9]{1,2}|2[0-4][0-9]|25[0-5])[.](?:[0-1]?[0-9]{1,2}|2[0-4][0-9]|25[0-5])[.](?:[0-1]?[0-9]{1,2}|2[0-4][0-9]|25[0-5]))(?![0-9])"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "960ad37f-adad-4b57-bfe7-b8ea293c3855",
+      "data": {
+        "name": "POSINT",
+        "pattern": "\\b(?:[1-9][0-9]*)\\b"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "19f0ec12-b189-4b74-a228-b0320707c415",
+      "data": {
+        "name": "URIPATH",
+        "pattern": "(?:/[A-Za-z0-9$.+!*'(){},~:;=@#%_\\-]*)+"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "53d0e42b-99b8-4368-8269-7f5c739b6aaa",
+      "data": {
+        "name": "URIPARAM",
+        "pattern": "\\?[A-Za-z0-9$.+!*'|(){},~@#%&/=:;_?\\-\\[\\]<>]*"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    },
+    {
+      "v": "1",
+      "type": {
+        "name": "grok_pattern",
+        "version": "1"
+      },
+      "id": "ae7cf77b-6793-4801-8549-788bcc841e84",
+      "data": {
+        "name": "USERNAME",
+        "pattern": "[a-zA-Z0-9._-]+"
+      },
+      "constraints": [
+        {
+          "type": "server-version",
+          "version": ">=4.1.3+9d79c05"
+        }
+      ]
+    }
+  ]
+}
