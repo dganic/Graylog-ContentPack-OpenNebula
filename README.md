@@ -27,4 +27,4 @@ This content pack provides useful dashboards for auditing logs:
 
 ## Screenshots
 
-![Dashboard]()
+![Dashboard](https://github.com/dganic/Graylog-ContentPack-OpenNebula/blob/main/screenshots/dashboard-graylog-opennebula.png?raw=true)
