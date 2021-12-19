@@ -5,7 +5,7 @@ The logs are parsed to enable dashboards, streams and structured search queries.
 <br />Tested with NXLog CE 2.11.2190 and Graylog 4.1.3
 
 This content pack provides useful dashboards for auditing logs:
-* OpenNebula  logs from /var/log/one
+* OpenNebula  logs from  `/var/log/one`
 * Operation system logs from systemd-journal
 
 
@@ -21,7 +21,7 @@ This content pack provides useful dashboards for auditing logs:
 
 ## Requirements
 
-* NXLog 
+* NXLog _You can use ansible role [Graylog-Collector](https://github.com/dganic/Ansible-Role-Graylog-Collector) to install on Ubuntu or Debian_
 * Gelf TCP Input
 
 
