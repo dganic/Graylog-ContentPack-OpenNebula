@@ -6,7 +6,7 @@ The logs are parsed to enable dashboards, streams and structured search queries.
 
 This content pack provides useful dashboards for auditing logs:
 * OpenNebula  logs from /var/log/one
-* Operation system logs form systemd-journal
+* Operation system logs from systemd-journal
 
 
 ## Includes
